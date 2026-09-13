@@ -14,3 +14,8 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# uv
+.python-version
+pyproject.toml
+uv.lock

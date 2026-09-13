@@ -25,6 +25,7 @@ from prompts import (
 )
 from providers import get_llm_provider
 
+# Nạp dữ liệu từ file environment
 load_dotenv()
 
 def load_test_cases():
@@ -43,14 +44,26 @@ def load_test_cases():
         return json.load(f)
 
 
+def sanitize_surrogates(obj):
+    """Làm sạch các ký tự surrogate không hợp lệ do bộ gõ tiếng Việt trên Terminal sinh ra"""
+    if isinstance(obj, str):
+        return obj.encode('utf-8', 'surrogatepass').decode('utf-8', 'replace')
+    elif isinstance(obj, dict):
+        return {k: sanitize_surrogates(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_surrogates(elem) for elem in obj]
+    return obj
+
+
 def save_waterfall_trace(trace_data: list):
     """Ghi vết log Waterfall Trace Log ra file docs/trace_waterfall.json"""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     docs_dir = os.path.join(base_dir, "docs")
     os.makedirs(docs_dir, exist_ok=True)
     trace_path = os.path.join(docs_dir, "trace_waterfall.json")
-    with open(trace_path, "w", encoding="utf-8") as f:
-        json.dump(trace_data, f, ensure_ascii=False, indent=2)
+    clean_data = sanitize_surrogates(trace_data)
+    with open(trace_path, "w", encoding="utf-8", errors="replace") as f:
+        json.dump(clean_data, f, ensure_ascii=False, indent=2)
     print(f"📊 [OBSERVABILITY]: Đã lưu {len(trace_data)} sự kiện Waterfall Trace tại '{trace_path}'!")
 
 
@@ -121,17 +134,28 @@ def run_react_agent(user_query: str, provider, mcp_server: MCPAcademicServer) ->
                 if obs_data.get("status") == "SUCCESS":
                     if "data" in obs_data:
                         d = obs_data["data"]
-                        final_answer = (
-                            f"Kết quả tra cứu cho sinh viên {obs_data.get('student_id', '')} ({d.get('full_name', '')}): "
-                            f"Lớp {d.get('class', '')}, GPA: {d.get('gpa', '')}, Email: {d.get('email', '')}, "
-                            f"Trạng thái: {d.get('status', '')}, Cố vấn: {d.get('advisor', '')}."
-                        )
+                        if "item_name" in d:
+                            final_answer = (
+                                f"Kết quả tra cứu đơn hàng {obs_data.get('tracking_id', '')}: "
+                                f"Sản phẩm: {d.get('item_name', '')} (SL: {d.get('quantity', 1)}), "
+                                f"Người nhận: {d.get('recipient_name', '')} ({d.get('recipient_phone', '')}), "
+                                f"Vị trí lưu kho: {d.get('warehouse_location', '')}, "
+                                f"Trạng thái: {d.get('status', '')}, Đơn vị vận chuyển: {d.get('carrier', '')}."
+                            )
+                        elif "full_name" in d:
+                            final_answer = (
+                                f"Kết quả tra cứu cho sinh viên {obs_data.get('student_id', '')} ({d.get('full_name', '')}): "
+                                f"Lớp {d.get('class', '')}, GPA: {d.get('gpa', '')}, Email: {d.get('email', '')}, "
+                                f"Trạng thái: {d.get('status', '')}, Cố vấn: {d.get('advisor', '')}."
+                            )
+                        else:
+                            final_answer = f"Thông tin chi tiết: {json.dumps(d, ensure_ascii=False)}"
                     elif "message" in obs_data:
                         final_answer = obs_data["message"]
                     else:
                         final_answer = f"Đã hoàn tất xử lý qua MCP Server: {json.dumps(obs_data, ensure_ascii=False)}"
                 elif obs_data.get("status") == "NOT_FOUND":
-                    final_answer = obs_data.get("message", "Không tìm thấy thông tin sinh viên yêu cầu.")
+                    final_answer = obs_data.get("message", "Không tìm thấy thông tin đơn hàng yêu cầu trong hệ thống.")
                 else:
                     final_answer = f"Phản hồi từ công cụ: {json.dumps(obs_data, ensure_ascii=False)}"
             
@@ -176,16 +200,19 @@ if __name__ == "__main__":
     tests = load_test_cases()
     print(f"✅ Đã tải thành công {len(tests)} Test Cases thử nghiệm.\n")
     
+    # Đây là quy ước quốc tế trong Terminal để đặt tên cho các "Cờ chức năng" (Flags)
+    # "--interactive" nghĩa là :python src/app.py --interactive thì sẽ chạy vào điều kiện này    
     if "--interactive" in sys.argv:
-        print("🎮 [INTERACTIVE MODE] Trò chuyện trực tiếp với ReAct Agent:")
+        print("🎮 [INTERACTIVE MODE] Trò chuyện trực tiếp với ReAct Agent Kho Vận:")
         print("💡 Gợi ý câu hỏi thử nghiệm:")
-        print("   - Câu hỏi chung: 'Quy chế học vụ VinUni yêu cầu bao nhiêu tín chỉ?'")
-        print("   - Tra cứu học vụ: 'Hãy tra cứu thông tin học vụ của sinh viên SV2026001'")
-        print("   - Đặt lịch hẹn: 'Đặt lịch hẹn tư vấn cho SV2026001 vào 14:00 ngày 15/09/2026'")
+        print("   - Câu hỏi chung: 'Quy trình lưu kho và kiểm kê barcode hàng hóa như thế nào?'")
+        print("   - Tra cứu đơn hàng: 'Hãy tra cứu thông tin vận đơn của đơn hàng VN2026_001'")
+        print("   - Cập nhật trạng thái: 'Cập nhật trạng thái đơn hàng VN2026_001 sang Đang xuất kho tại Kho Tổng Hà Nội'")
         print("   - Gõ 'exit' hoặc 'quit' để kết thúc phiên trò chuyện.\n")
         while True:
             try:
-                user_input = input("👤 Sinh viên hỏi: ").strip()
+                user_input = input("👤 Quản trị viên hỏi: ").strip()
+                user_input = sanitize_surrogates(user_input)
                 if not user_input or user_input.lower() in ["exit", "quit"]:
                     print("👋 Tạm biệt! Kết thúc phiên trò chuyện.")
                     break
@@ -195,7 +222,7 @@ if __name__ == "__main__":
                 print("\n👋 Đã thoát phiên tương tác.")
                 break
     elif "--all" in sys.argv:
-        print("🚀 [TEST SUITE MODE] Kiểm tra 5 Test Cases:")
+        print("🚀 [TEST SUITE MODE] Kiểm tra 5 Test Cases Kho Vận:")
         completed_count = 0
         todo_count = 0
         all_traces = []
@@ -227,7 +254,7 @@ if __name__ == "__main__":
         print("  2. Chạy toàn bộ Test Cases:    python src/app.py --all\n")
         
         sample_query = tests[1]["question"]
-        print(f"--- 🏁 DEMO CHẠY THỬ 1 TEST CASE MẪU (TC02: Tra cứu học vụ) ---")
+        print(f"--- 🏁 DEMO CHẠY THỬ 1 TEST CASE MẪU (TC02: Tra cứu đơn hàng & kho vận) ---")
         logs = run_react_agent(sample_query, provider, mcp_server)
         save_waterfall_trace(logs)
         print("\n💡 Hãy thử ngay lệnh: python src/app.py --interactive để chat trực tiếp!")

@@ -38,25 +38,26 @@ class MockOfflineProvider(BaseLLMProvider):
         prompt_lower = prompt.lower()
         
         # Mô phỏng nhận diện intent gọi Tool
-        if "sv2026001" in prompt_lower and "đặt lịch" in prompt_lower:
+        if ("vn2026" in prompt_lower or "đơn hàng" in prompt_lower or "vận đơn" in prompt_lower) and ("cập nhật" in prompt_lower or "xuất kho" in prompt_lower or "giao hàng" in prompt_lower or "đặt lịch" in prompt_lower):
             return {
                 "type": "tool_call",
-                "tool_name": "schedule_appointment",
-                "arguments": {"student_id": "SV2026001", "datetime_str": "14:00 15/09/2026", "advisor_name": "PGS.TS Nguyễn Văn A"},
-                "thought": "Người dùng yêu cầu đặt lịch hẹn tư vấn cho sinh viên SV2026001. Tôi sẽ gọi tool schedule_appointment."
+                "tool_name": "update_order_status",
+                "arguments": {"tracking_id": "VN2026_001", "new_status": "Đang giao hàng", "warehouse_location": "Kho Tổng Hà Nội - Kệ B3"},
+                "thought": "Người dùng yêu cầu cập nhật trạng thái đơn hàng. Tôi sẽ gọi tool update_order_status."
             }
-        elif "sv2026001" in prompt_lower or "tra cứu" in prompt_lower:
+        elif "vn2026" in prompt_lower or "tra cứu" in prompt_lower or "đơn hàng" in prompt_lower or "sv2026" in prompt_lower:
+            tracking_id = "VN9999_999" if ("999" in prompt_lower or "không tồn tại" in prompt_lower) else "VN2026_001"
             return {
                 "type": "tool_call",
-                "tool_name": "academic_query",
-                "arguments": {"student_id": "SV2026001"},
-                "thought": "Người dùng muốn tra cứu thông tin học vụ của sinh viên SV2026001. Tôi sẽ gọi tool academic_query."
+                "tool_name": "order_query",
+                "arguments": {"tracking_id": tracking_id},
+                "thought": f"Người dùng muốn tra cứu thông tin đơn hàng {tracking_id}. Tôi sẽ gọi tool order_query."
             }
         else:
             return {
                 "type": "text",
-                "content": f"[Mock Agent Response]: Xin chào! Quy chế học vụ VinUni yêu cầu sinh viên tích lũy tối thiểu 120 tín chỉ và duy trì GPA trên 2.0 để tốt nghiệp.",
-                "thought": "Câu hỏi chung về quy chế học vụ, trả lời trực tiếp không cần gọi Tool."
+                "content": f"[Mock Agent Response]: Xin chào! Quy trình lưu kho tiêu chuẩn yêu cầu kiểm kê vị trí kệ và quét barcode trong vòng 2 giờ làm việc sau khi nhập hàng.",
+                "thought": "Câu hỏi chung về quy trình kho vận, trả lời trực tiếp không cần gọi Tool."
             }
 
 
@@ -64,7 +65,7 @@ class GeminiProvider(BaseLLMProvider):
     """Google Gemini Provider (Native Tool Calling với Google GenAI SDK)"""
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model or os.getenv("LLM_MODEL") or "gemini-2.5-flash"
+        self.model_name = model or os.getenv("LLM_MODEL") or "gemini-3.5-flash"
 
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         if not self.api_key or self.api_key == "your_gemini_api_key_here":
